@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Net.Sockets;
 using System.Text;
 using UnityEngine;
+using TMPro;
 
 public class HandReceiver : MonoBehaviour
 {
@@ -35,6 +36,74 @@ public class HandReceiver : MonoBehaviour
     private List<Renderer> activePoints_Right = new List<Renderer>();
     private List<LineRenderer> activeLines_Left = new List<LineRenderer>();
     private List<LineRenderer> activeLines_Right = new List<LineRenderer>();
+
+    public TextMeshProUGUI gestureText;
+
+    private string currentGesture = "";
+    private string lastDetectedGesture = "";
+    private float gestureHoldTime = 0f;
+    [Range(0.2f, 2f)]
+    public float requiredHoldDuration = 0.8f;
+
+    float GetFingerBendAngle(Landmark mcp, Landmark pip, Landmark tip)
+    {
+        Vector3 v1 = new Vector3(pip.x - mcp.x, pip.y - mcp.y, pip.z - mcp.z);
+        Vector3 v2 = new Vector3(tip.x - pip.x, tip.y - pip.y, tip.z - pip.z);
+        return Vector3.Angle(v1, v2);
+    }
+
+    float GetThumbAngle(List<Landmark> lm)
+    {
+        Vector3 v1 = new Vector3(lm[1].x - lm[0].x, lm[1].y - lm[0].y, lm[1].z - lm[0].z);
+        Vector3 v2 = new Vector3(lm[4].x - lm[2].x, lm[4].y - lm[2].y, lm[4].z - lm[2].z);
+        return Vector3.Angle(v1, v2);
+    }
+
+    bool IsThumbExtended(List<Landmark> lm)
+    {
+        float dist = Vector3.Distance(
+            new Vector3(lm[1].x, lm[1].y, lm[1].z),
+            new Vector3(lm[4].x, lm[4].y, lm[4].z)
+        );
+        Debug.Log($"Thumb length: {dist}");
+        return dist > 0.1f;  // 수치 조정 가능
+    }
+
+    bool IsFingerExtended(List<Landmark> lm, int mcp, int pip, int tip)
+    {
+        Vector3 p0 = new Vector3(lm[mcp].x, lm[mcp].y, lm[mcp].z);
+        Vector3 p1 = new Vector3(lm[pip].x, lm[pip].y, lm[pip].z);
+        Vector3 p2 = new Vector3(lm[tip].x, lm[tip].y, lm[tip].z);
+
+        float direct = Vector3.Distance(p0, p2);
+        float total = Vector3.Distance(p0, p1) + Vector3.Distance(p1, p2);
+
+        float straightness = direct / total;
+
+        Debug.Log($"[Finger {mcp}-{tip}] Straightness: {straightness}");
+
+        return straightness > 0.9f;  // 1.0이면 완전 직선
+    }
+
+    bool IsHello(List<Landmark> lm)
+    {
+        int extended = 0;
+        if (IsFingerExtended(lm, 5, 6, 8)) extended++;
+        if (IsFingerExtended(lm, 9, 10, 12)) extended++;
+        if (IsFingerExtended(lm, 13, 14, 16)) extended++;
+        if (IsFingerExtended(lm, 17, 18, 20)) extended++;
+        return IsThumbExtended(lm) && extended >= 3;
+    }
+
+    bool IsThanks(List<Landmark> lm)
+    {
+        int folded = 0;
+        if (!IsFingerExtended(lm, 5, 6, 8)) folded++;
+        if (!IsFingerExtended(lm, 9, 10, 12)) folded++;
+        if (!IsFingerExtended(lm, 13, 14, 16)) folded++;
+        if (!IsFingerExtended(lm, 17, 18, 20)) folded++;
+        return folded >= 4;
+    }
 
     void Start()
     {
@@ -92,6 +161,12 @@ public class HandReceiver : MonoBehaviour
 
                             var landmarks = handData.hands[h].landmarks;
 
+                            // 💡 Mirror mode 적용: x 좌표 반전
+                            for (int i = 0; i < landmarks.Count; i++)
+                            {
+                                landmarks[i].x = 1.0f - landmarks[i].x;
+                            }
+
                             var pointPool = (h == 0) ? pointPool_Left : pointPool_Right;
                             var linePool = (h == 0) ? linePool_Left : linePool_Right;
                             var pointList = (h == 0) ? activePoints_Left : activePoints_Right;
@@ -137,6 +212,37 @@ public class HandReceiver : MonoBehaviour
                                     lr.SetPosition(1, currentHandPoints[endIdx].position);
                                 }
                             }
+                        }
+
+                        if (handData.hands.Count >= 2 && handData.hands[1] != null)
+                        {
+                            var rightHand = handData.hands[1].landmarks;
+
+                            string detectedGesture = "";
+
+                            if (IsHello(rightHand))
+                                detectedGesture = "안녕하세요";
+                            else if (IsThanks(rightHand))
+                                detectedGesture = "감사합니다";
+
+                            if (detectedGesture != lastDetectedGesture)
+                            {
+                                lastDetectedGesture = detectedGesture;
+                                gestureHoldTime = 0f;
+                            }
+                            else
+                            {
+                                gestureHoldTime += Time.deltaTime;
+
+                                if (gestureHoldTime >= requiredHoldDuration)
+                                {
+                                    currentGesture = detectedGesture;
+                                }
+                            }
+
+                            gestureText.text = currentGesture;
+
+                            Debug.Log($"Hello: {IsHello(rightHand)}, Thanks: {IsThanks(rightHand)}");
                         }
                     }
                     catch (Exception e)
