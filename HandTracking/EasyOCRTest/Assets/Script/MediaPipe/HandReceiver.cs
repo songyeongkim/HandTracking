@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using System.Text;
 using UnityEngine;
 using TMPro;
+using static HandReceiver;
 
 public class HandReceiver : MonoBehaviour
 {
@@ -103,6 +104,27 @@ public class HandReceiver : MonoBehaviour
         if (!IsFingerExtended(lm, 13, 14, 16)) folded++;
         if (!IsFingerExtended(lm, 17, 18, 20)) folded++;
         return folded >= 4;
+    }
+
+    bool IsILoveYou(List<Landmark> lm)
+    {
+        return IsThumbExtended(lm)
+            && IsFingerExtended(lm, 5, 6, 8)  // 검지
+            && !IsFingerExtended(lm, 9, 10, 12) // 중지 접음
+            && !IsFingerExtended(lm, 13, 14, 16) // 약지 접음
+            && IsFingerExtended(lm, 17, 18, 20); // 소지
+    }
+
+    private List<Gesture> gestures;
+
+    private void Awake()
+    {
+        gestures = new List<Gesture>
+        {
+            new Gesture("안녕하세요", IsHello),
+            new Gesture("감사합니다", IsThanks),
+            new Gesture("사랑해요", IsILoveYou) // 추가 예시
+        };
     }
 
     void Start()
@@ -220,10 +242,14 @@ public class HandReceiver : MonoBehaviour
 
                             string detectedGesture = "";
 
-                            if (IsHello(rightHand))
-                                detectedGesture = "안녕하세요";
-                            else if (IsThanks(rightHand))
-                                detectedGesture = "감사합니다";
+                            foreach (var gesture in gestures)
+                            {
+                                if (gesture.matchFunc(rightHand))
+                                {
+                                    detectedGesture = gesture.name;
+                                    break;
+                                }
+                            }
 
                             if (detectedGesture != lastDetectedGesture)
                             {
@@ -286,5 +312,17 @@ public class HandReceiver : MonoBehaviour
     public class HandsWrapper
     {
         public List<HandLandmarks> hands;
+    }
+
+    public class Gesture
+    {
+        public string name;
+        public Func<List<Landmark>, bool> matchFunc;
+
+        public Gesture(string name, Func<List<Landmark>, bool> matchFunc)
+        {
+            this.name = name;
+            this.matchFunc = matchFunc;
+        }
     }
 }
