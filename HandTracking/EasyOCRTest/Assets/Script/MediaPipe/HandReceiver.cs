@@ -6,6 +6,7 @@ using System.Text;
 using UnityEngine;
 using TMPro;
 using System.Collections;
+using UnityEditor.PackageManager.Requests;
 
 public class HandReceiver : MonoBehaviour
 {
@@ -45,6 +46,7 @@ public class HandReceiver : MonoBehaviour
 
     private List<List<Landmark>> recordedFrames = new();
     private bool isRecording = false;
+    private bool isPredicting = false;
 
     private string currentGesture = "";
     private string lastDetectedGesture = "";
@@ -62,12 +64,6 @@ public class HandReceiver : MonoBehaviour
 
     private void Awake()
     {
-        gestures = new List<Gesture>
-        {
-            new Gesture("안녕하세요", IsHello),
-            new Gesture("감사합니다", IsThanks),
-            new Gesture("사랑해요", IsILoveYou)
-        };
     }
 
     void Start()
@@ -96,43 +92,78 @@ public class HandReceiver : MonoBehaviour
         string label = gestureInput.text.Trim();
         if (!string.IsNullOrEmpty(label))
         {
-
-            statusText.text = $"📹 Wait for Recording: {label}";
-            StartCoroutine(RecordTime());
+            StartCoroutine(RecordGesture(label));
         }
     }
 
-    IEnumerator RecordTime()
+    public void StartPredicting()
     {
-        //1초 대기
-        yield return new WaitForSeconds(recordingWaitTime);
+        statusText.text = $"📹 Wait for Predicting";
+        StartCoroutine(PredictGestureFromModel());
+    }
 
-        string label = gestureInput.text.Trim();
-        statusText.text = $"📹 Recording gesture: {label} , {recordingTIme}";
+    IEnumerator PredictGestureFromModel()
+    {
+        statusText.text = "⏳ Get ready...";
+        yield return new WaitForSeconds(1f); // 1초 대기
+
+        isPredicting = true;
         recordedFrames.Clear();
+        statusText.text = "Predicting gesture";
+
+        yield return new WaitForSeconds(5f); // 5초 녹화
+
+
+        while (recordedFrames.Count < 150)
+        {
+            recordedFrames.Add(new List<Landmark>(new Landmark[21]));
+        }
+
+        var wrapper = new RecordedGesture("predict", recordedFrames);
+        string json = JsonUtility.ToJson(wrapper);
+
+        using var request = new UnityEngine.Networking.UnityWebRequest("http://127.0.0.1:8000/predict", "POST");
+        byte[] bodyRaw = Encoding.UTF8.GetBytes(json);
+        request.uploadHandler = new UnityEngine.Networking.UploadHandlerRaw(bodyRaw);
+        request.downloadHandler = new UnityEngine.Networking.DownloadHandlerBuffer();
+        request.SetRequestHeader("Content-Type", "application/json");
+
+        yield return request.SendWebRequest();
+
+        if (request.result == UnityEngine.Networking.UnityWebRequest.Result.Success)
+        {
+            string responseJson = request.downloadHandler.text;
+            var response = JsonUtility.FromJson<PredictionResult>(responseJson);
+            gestureText.text = $"🤖 {response.gesture}";
+        }
+        else
+        {
+            Debug.LogError("🔥 Predict request failed: " + request.error);
+        }
+    }
+
+    IEnumerator RecordGesture(string label)
+    {
+        statusText.text = "⏳ Get ready...";
+        yield return new WaitForSeconds(1f); // 1초 대기
+
         isRecording = true;
+        recordedFrames.Clear();
+        statusText.text = $"📹 Recording gesture: {label}";
+
+        yield return new WaitForSeconds(5f); // 5초간 녹화
+
+        isRecording = false;
+        string json = JsonUtility.ToJson(new RecordedGesture(label, recordedFrames));
+        string folder = Path.Combine(Application.dataPath, "GestureData");
+        Directory.CreateDirectory(folder);
+        string path = Path.Combine(folder, $"{label}_{DateTime.Now:yyyyMMdd_HHmmss}.json");
+        File.WriteAllText(path, json);
+        statusText.text = $"💾 Saved to: {path}";
     }
 
     void Update()
     {
-        if(isRecording)
-        {
-            recordingTIme += Time.deltaTime;
-            statusText.text = $"📹 Recording gesture: {gestureInput.text.Trim()} , {recordingTIme}";
-
-            if (recordingTIme >= recordingNeedTime)
-            {
-                isRecording = false;
-                string label = gestureInput.text.Trim();
-                string json = JsonUtility.ToJson(new RecordedGesture(label, recordedFrames));
-                string folder = Path.Combine(Application.dataPath, "GestureData");
-                Directory.CreateDirectory(folder);
-                string path = Path.Combine(folder, $"{label}_{DateTime.Now:yyyyMMdd_HHmmss}.json");
-                File.WriteAllText(path, json);
-                statusText.text = $"💾 Saved to: {path}";
-            }
-        }
-
         if (stream != null && stream.DataAvailable)
         {
             byte[] buffer = new byte[4096];
@@ -166,7 +197,7 @@ public class HandReceiver : MonoBehaviour
                             for (int i = 0; i < landmarks.Count; i++)
                                 landmarks[i].x = 1.0f - landmarks[i].x;
 
-                            if (isRecording && h == 1)
+                            if (isRecording && h == 1 || isPredicting && h == 1)
                                 recordedFrames.Add(new List<Landmark>(landmarks));
 
                             var pointPool = (h == 0) ? pointPool_Left : pointPool_Right;
@@ -213,36 +244,6 @@ public class HandReceiver : MonoBehaviour
                                     lr.SetPosition(1, currentHandPoints[endIdx].position);
                                 }
                             }
-                        }
-
-                        if (handData.hands.Count >= 2 && handData.hands[1] != null)
-                        {
-                            var rightHand = handData.hands[1].landmarks;
-
-                            string detectedGesture = "";
-                            foreach (var gesture in gestures)
-                            {
-                                if (gesture.matchFunc(rightHand))
-                                {
-                                    detectedGesture = gesture.name;
-                                    break;
-                                }
-                            }
-
-                            if (detectedGesture != lastDetectedGesture)
-                            {
-                                lastDetectedGesture = detectedGesture;
-                                gestureHoldTime = 0f;
-                            }
-                            else
-                            {
-                                gestureHoldTime += Time.deltaTime;
-
-                                if (gestureHoldTime >= requiredHoldDuration)
-                                    currentGesture = detectedGesture;
-                            }
-
-                            gestureText.text = currentGesture;
                         }
                     }
                     catch (Exception e)
@@ -328,6 +329,12 @@ public class HandReceiver : MonoBehaviour
         }
     }
 
+    [Serializable]
+    public class PredictionResult
+    {
+        public string gesture;
+    }
+
     bool IsThumbExtended(List<Landmark> lm)
     {
         Vector3 v1 = new Vector3(lm[1].x - lm[0].x, lm[1].y - lm[0].y, lm[1].z - lm[0].z);
@@ -342,34 +349,5 @@ public class HandReceiver : MonoBehaviour
         Vector3 v2 = new Vector3(lm[tip].x - lm[pip].x, lm[tip].y - lm[pip].y, lm[tip].z - lm[pip].z);
         float angle = Vector3.Angle(v1, v2);
         return angle > 130f;
-    }
-
-    bool IsHello(List<Landmark> lm)
-    {
-        int extended = 0;
-        if (IsFingerExtended(lm, 5, 6, 8)) extended++;
-        if (IsFingerExtended(lm, 9, 10, 12)) extended++;
-        if (IsFingerExtended(lm, 13, 14, 16)) extended++;
-        if (IsFingerExtended(lm, 17, 18, 20)) extended++;
-        return IsThumbExtended(lm) && extended >= 3;
-    }
-
-    bool IsThanks(List<Landmark> lm)
-    {
-        int folded = 0;
-        if (!IsFingerExtended(lm, 5, 6, 8)) folded++;
-        if (!IsFingerExtended(lm, 9, 10, 12)) folded++;
-        if (!IsFingerExtended(lm, 13, 14, 16)) folded++;
-        if (!IsFingerExtended(lm, 17, 18, 20)) folded++;
-        return folded >= 4;
-    }
-
-    bool IsILoveYou(List<Landmark> lm)
-    {
-        return IsThumbExtended(lm)
-            && IsFingerExtended(lm, 5, 6, 8)
-            && !IsFingerExtended(lm, 9, 10, 12)
-            && !IsFingerExtended(lm, 13, 14, 16)
-            && IsFingerExtended(lm, 17, 18, 20);
     }
 }

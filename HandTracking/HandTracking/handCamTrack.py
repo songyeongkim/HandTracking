@@ -58,7 +58,7 @@ def socket_server():
 app = Flask(__name__)
 model = tf.keras.models.load_model("sign_gesture_model.h5")
 labels = ["안녕하세요", "감사합니다", "사랑해요"]
-MAX_SEQ_LEN = 30
+MAX_SEQ_LEN = 150
 
 @app.route("/predict", methods=["POST"])
 def predict():
