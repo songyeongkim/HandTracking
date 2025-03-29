@@ -1,10 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Net.Sockets;
 using System.Text;
 using UnityEngine;
 using TMPro;
-using static HandReceiver;
+using System.Collections;
 
 public class HandReceiver : MonoBehaviour
 {
@@ -16,6 +17,10 @@ public class HandReceiver : MonoBehaviour
 
     public Material leftHandLineMaterial;
     public Material rightHandLineMaterial;
+
+    public TMP_InputField gestureInput;
+    public TextMeshProUGUI statusText;
+    public TextMeshProUGUI gestureText;
 
     private StringBuilder receivedData = new StringBuilder();
 
@@ -33,12 +38,13 @@ public class HandReceiver : MonoBehaviour
     private ObjectPool<LineRenderer> linePool_Left;
     private ObjectPool<LineRenderer> linePool_Right;
 
-    private List<Renderer> activePoints_Left = new List<Renderer>();
-    private List<Renderer> activePoints_Right = new List<Renderer>();
-    private List<LineRenderer> activeLines_Left = new List<LineRenderer>();
-    private List<LineRenderer> activeLines_Right = new List<LineRenderer>();
+    private List<Renderer> activePoints_Left = new();
+    private List<Renderer> activePoints_Right = new();
+    private List<LineRenderer> activeLines_Left = new();
+    private List<LineRenderer> activeLines_Right = new();
 
-    public TextMeshProUGUI gestureText;
+    private List<List<Landmark>> recordedFrames = new();
+    private bool isRecording = false;
 
     private string currentGesture = "";
     private string lastDetectedGesture = "";
@@ -46,74 +52,11 @@ public class HandReceiver : MonoBehaviour
     [Range(0.2f, 2f)]
     public float requiredHoldDuration = 0.8f;
 
-    float GetFingerBendAngle(Landmark mcp, Landmark pip, Landmark tip)
-    {
-        Vector3 v1 = new Vector3(pip.x - mcp.x, pip.y - mcp.y, pip.z - mcp.z);
-        Vector3 v2 = new Vector3(tip.x - pip.x, tip.y - pip.y, tip.z - pip.z);
-        return Vector3.Angle(v1, v2);
-    }
-
-    float GetThumbAngle(List<Landmark> lm)
-    {
-        Vector3 v1 = new Vector3(lm[1].x - lm[0].x, lm[1].y - lm[0].y, lm[1].z - lm[0].z);
-        Vector3 v2 = new Vector3(lm[4].x - lm[2].x, lm[4].y - lm[2].y, lm[4].z - lm[2].z);
-        return Vector3.Angle(v1, v2);
-    }
-
-    bool IsThumbExtended(List<Landmark> lm)
-    {
-        float dist = Vector3.Distance(
-            new Vector3(lm[1].x, lm[1].y, lm[1].z),
-            new Vector3(lm[4].x, lm[4].y, lm[4].z)
-        );
-        Debug.Log($"Thumb length: {dist}");
-        return dist > 0.1f;  // 수치 조정 가능
-    }
-
-    bool IsFingerExtended(List<Landmark> lm, int mcp, int pip, int tip)
-    {
-        Vector3 p0 = new Vector3(lm[mcp].x, lm[mcp].y, lm[mcp].z);
-        Vector3 p1 = new Vector3(lm[pip].x, lm[pip].y, lm[pip].z);
-        Vector3 p2 = new Vector3(lm[tip].x, lm[tip].y, lm[tip].z);
-
-        float direct = Vector3.Distance(p0, p2);
-        float total = Vector3.Distance(p0, p1) + Vector3.Distance(p1, p2);
-
-        float straightness = direct / total;
-
-        Debug.Log($"[Finger {mcp}-{tip}] Straightness: {straightness}");
-
-        return straightness > 0.9f;  // 1.0이면 완전 직선
-    }
-
-    bool IsHello(List<Landmark> lm)
-    {
-        int extended = 0;
-        if (IsFingerExtended(lm, 5, 6, 8)) extended++;
-        if (IsFingerExtended(lm, 9, 10, 12)) extended++;
-        if (IsFingerExtended(lm, 13, 14, 16)) extended++;
-        if (IsFingerExtended(lm, 17, 18, 20)) extended++;
-        return IsThumbExtended(lm) && extended >= 3;
-    }
-
-    bool IsThanks(List<Landmark> lm)
-    {
-        int folded = 0;
-        if (!IsFingerExtended(lm, 5, 6, 8)) folded++;
-        if (!IsFingerExtended(lm, 9, 10, 12)) folded++;
-        if (!IsFingerExtended(lm, 13, 14, 16)) folded++;
-        if (!IsFingerExtended(lm, 17, 18, 20)) folded++;
-        return folded >= 4;
-    }
-
-    bool IsILoveYou(List<Landmark> lm)
-    {
-        return IsThumbExtended(lm)
-            && IsFingerExtended(lm, 5, 6, 8)  // 검지
-            && !IsFingerExtended(lm, 9, 10, 12) // 중지 접음
-            && !IsFingerExtended(lm, 13, 14, 16) // 약지 접음
-            && IsFingerExtended(lm, 17, 18, 20); // 소지
-    }
+    [Range(0.2f, 5f)]
+    public float recordingWaitTime = 2f;
+    [Range(0.2f, 5f)]
+    public float recordingNeedTime = 3f;
+    private float recordingTIme = 0f;
 
     private List<Gesture> gestures;
 
@@ -123,7 +66,7 @@ public class HandReceiver : MonoBehaviour
         {
             new Gesture("안녕하세요", IsHello),
             new Gesture("감사합니다", IsThanks),
-            new Gesture("사랑해요", IsILoveYou) // 추가 예시
+            new Gesture("사랑해요", IsILoveYou)
         };
     }
 
@@ -148,8 +91,48 @@ public class HandReceiver : MonoBehaviour
         linePool_Right = new ObjectPool<LineRenderer>(linePrefab.GetComponent<LineRenderer>(), 50);
     }
 
+    public void StartRecording()
+    {
+        string label = gestureInput.text.Trim();
+        if (!string.IsNullOrEmpty(label))
+        {
+
+            statusText.text = $"📹 Wait for Recording: {label}";
+            StartCoroutine(RecordTime());
+        }
+    }
+
+    IEnumerator RecordTime()
+    {
+        //1초 대기
+        yield return new WaitForSeconds(recordingWaitTime);
+
+        string label = gestureInput.text.Trim();
+        statusText.text = $"📹 Recording gesture: {label} , {recordingTIme}";
+        recordedFrames.Clear();
+        isRecording = true;
+    }
+
     void Update()
     {
+        if(isRecording)
+        {
+            recordingTIme += Time.deltaTime;
+            statusText.text = $"📹 Recording gesture: {gestureInput.text.Trim()} , {recordingTIme}";
+
+            if (recordingTIme >= recordingNeedTime)
+            {
+                isRecording = false;
+                string label = gestureInput.text.Trim();
+                string json = JsonUtility.ToJson(new RecordedGesture(label, recordedFrames));
+                string folder = Path.Combine(Application.dataPath, "GestureData");
+                Directory.CreateDirectory(folder);
+                string path = Path.Combine(folder, $"{label}_{DateTime.Now:yyyyMMdd_HHmmss}.json");
+                File.WriteAllText(path, json);
+                statusText.text = $"💾 Saved to: {path}";
+            }
+        }
+
         if (stream != null && stream.DataAvailable)
         {
             byte[] buffer = new byte[4096];
@@ -169,10 +152,7 @@ public class HandReceiver : MonoBehaviour
                     {
                         HandsWrapper handData = JsonUtility.FromJson<HandsWrapper>(jsonString);
                         if (handData == null || handData.hands == null)
-                        {
-                            ReturnAll();
                             return;
-                        }
 
                         ReturnAll();
 
@@ -183,11 +163,11 @@ public class HandReceiver : MonoBehaviour
 
                             var landmarks = handData.hands[h].landmarks;
 
-                            // 💡 Mirror mode 적용: x 좌표 반전
                             for (int i = 0; i < landmarks.Count; i++)
-                            {
                                 landmarks[i].x = 1.0f - landmarks[i].x;
-                            }
+
+                            if (isRecording && h == 1)
+                                recordedFrames.Add(new List<Landmark>(landmarks));
 
                             var pointPool = (h == 0) ? pointPool_Left : pointPool_Right;
                             var linePool = (h == 0) ? linePool_Left : linePool_Right;
@@ -195,16 +175,15 @@ public class HandReceiver : MonoBehaviour
                             var lineList = (h == 0) ? activeLines_Left : activeLines_Right;
                             var lineMat = (h == 0) ? leftHandLineMaterial : rightHandLineMaterial;
 
-                            List<Transform> currentHandPoints = new List<Transform>();
+                            List<Transform> currentHandPoints = new();
 
                             for (int i = 0; i < landmarks.Count; i++)
                             {
-                                var lm = landmarks[i];
-                                float flippedY = 1 - lm.y;
+                                float flippedY = 1 - landmarks[i].y;
                                 Vector3 pos = new Vector3(
-                                    lm.x * 5f - 2.5f,
+                                    landmarks[i].x * 5f - 2.5f,
                                     flippedY * 5f - 2.5f,
-                                    -lm.z * 5f
+                                    -landmarks[i].z * 5f
                                 );
 
                                 if (pointList.Count <= i)
@@ -241,7 +220,6 @@ public class HandReceiver : MonoBehaviour
                             var rightHand = handData.hands[1].landmarks;
 
                             string detectedGesture = "";
-
                             foreach (var gesture in gestures)
                             {
                                 if (gesture.matchFunc(rightHand))
@@ -261,14 +239,10 @@ public class HandReceiver : MonoBehaviour
                                 gestureHoldTime += Time.deltaTime;
 
                                 if (gestureHoldTime >= requiredHoldDuration)
-                                {
                                     currentGesture = detectedGesture;
-                                }
                             }
 
                             gestureText.text = currentGesture;
-
-                            Debug.Log($"Hello: {IsHello(rightHand)}, Thanks: {IsThanks(rightHand)}");
                         }
                     }
                     catch (Exception e)
@@ -282,10 +256,10 @@ public class HandReceiver : MonoBehaviour
 
     void ReturnAll()
     {
-        if (pointPool_Left != null) pointPool_Left.ReturnAll(activePoints_Left);
-        if (pointPool_Right != null) pointPool_Right.ReturnAll(activePoints_Right);
-        if (linePool_Left != null) linePool_Left.ReturnAll(activeLines_Left);
-        if (linePool_Right != null) linePool_Right.ReturnAll(activeLines_Right);
+        pointPool_Left?.ReturnAll(activePoints_Left);
+        pointPool_Right?.ReturnAll(activePoints_Right);
+        linePool_Left?.ReturnAll(activeLines_Left);
+        linePool_Right?.ReturnAll(activeLines_Right);
     }
 
     void OnApplicationQuit()
@@ -324,5 +298,78 @@ public class HandReceiver : MonoBehaviour
             this.name = name;
             this.matchFunc = matchFunc;
         }
+    }
+
+    [Serializable]
+    public class RecordedGesture
+    {
+        public string label;
+        public List<FrameData> sequence;
+
+        public RecordedGesture(string label, List<List<Landmark>> frames)
+        {
+            this.label = label;
+            this.sequence = new List<FrameData>();
+            foreach (var frame in frames)
+            {
+                sequence.Add(new FrameData(frame));
+            }
+        }
+    }
+
+    [Serializable]
+    public class FrameData
+    {
+        public List<Landmark> landmarks;
+
+        public FrameData(List<Landmark> lm)
+        {
+            landmarks = lm;
+        }
+    }
+
+    bool IsThumbExtended(List<Landmark> lm)
+    {
+        Vector3 v1 = new Vector3(lm[1].x - lm[0].x, lm[1].y - lm[0].y, lm[1].z - lm[0].z);
+        Vector3 v2 = new Vector3(lm[4].x - lm[2].x, lm[4].y - lm[2].y, lm[4].z - lm[2].z);
+        float angle = Vector3.Angle(v1, v2);
+        return angle < 45f || angle > 135f;
+    }
+
+    bool IsFingerExtended(List<Landmark> lm, int mcp, int pip, int tip)
+    {
+        Vector3 v1 = new Vector3(lm[pip].x - lm[mcp].x, lm[pip].y - lm[mcp].y, lm[pip].z - lm[mcp].z);
+        Vector3 v2 = new Vector3(lm[tip].x - lm[pip].x, lm[tip].y - lm[pip].y, lm[tip].z - lm[pip].z);
+        float angle = Vector3.Angle(v1, v2);
+        return angle > 130f;
+    }
+
+    bool IsHello(List<Landmark> lm)
+    {
+        int extended = 0;
+        if (IsFingerExtended(lm, 5, 6, 8)) extended++;
+        if (IsFingerExtended(lm, 9, 10, 12)) extended++;
+        if (IsFingerExtended(lm, 13, 14, 16)) extended++;
+        if (IsFingerExtended(lm, 17, 18, 20)) extended++;
+        return IsThumbExtended(lm) && extended >= 3;
+    }
+
+    bool IsThanks(List<Landmark> lm)
+    {
+        int folded = 0;
+        if (!IsFingerExtended(lm, 5, 6, 8)) folded++;
+        if (!IsFingerExtended(lm, 9, 10, 12)) folded++;
+        if (!IsFingerExtended(lm, 13, 14, 16)) folded++;
+        if (!IsFingerExtended(lm, 17, 18, 20)) folded++;
+        return folded >= 4;
+    }
+
+    bool IsILoveYou(List<Landmark> lm)
+    {
+        return IsThumbExtended(lm)
+            && IsFingerExtended(lm, 5, 6, 8)
+            && !IsFingerExtended(lm, 9, 10, 12)
+            && !IsFingerExtended(lm, 13, 14, 16)
+            && IsFingerExtended(lm, 17, 18, 20);
     }
 }
