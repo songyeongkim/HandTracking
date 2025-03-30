@@ -56,13 +56,39 @@ def socket_server():
 
 # 📌 Flask 서버 설정
 app = Flask(__name__)
-model = tf.keras.models.load_model("sign_gesture_model.h5")
+model = tf.keras.models.load_model("sign_gesture_model_v2.h5")
 labels = ["안녕하세요", "감사합니다", "사랑해요"]
 MAX_SEQ_LEN = 151
 
 @app.before_request
 def log_request_info():
     print(f"📡 [Flask] 요청 도착: {request.method} {request.path}")
+
+
+def is_finger_extended(lm, mcp, pip, tip):
+    v1 = np.array([lm[pip]["x"] - lm[mcp]["x"], lm[pip]["y"] - lm[mcp]["y"]])
+    v2 = np.array([lm[tip]["x"] - lm[pip]["x"], lm[tip]["y"] - lm[pip]["y"]])
+    dot = np.dot(v1, v2)
+    norm = np.linalg.norm(v1) * np.linalg.norm(v2)
+    angle = np.degrees(np.arccos(np.clip(dot / norm, -1.0, 1.0)))
+    return 1.0 if angle > 160 else 0.0
+
+
+def extract_features_from_frame(frame):
+    lm = frame["landmarks"]
+    flat = []
+    for pt in lm:
+        flat.extend([pt["x"], pt["y"], pt["z"]])
+
+    fingers = [
+        is_finger_extended(lm, 2, 3, 4),
+        is_finger_extended(lm, 5, 6, 8),
+        is_finger_extended(lm, 9, 10, 12),
+        is_finger_extended(lm, 13, 14, 16),
+        is_finger_extended(lm, 17, 18, 20)
+    ]
+
+    return flat + fingers  # 최종: 63 + 5 = 68
 
 @app.route("/predict", methods=["POST"])
 def predict():
@@ -81,13 +107,10 @@ def predict():
 
         input_seq = []
         for frame in frames:
-            flat = []
-            for lm in frame["landmarks"]:
-                flat.extend([lm["x"], lm["y"], lm["z"]])
-            input_seq.append(flat)
+            input_seq.append(extract_features_from_frame(frame))
 
         while len(input_seq) < MAX_SEQ_LEN:
-            input_seq.append([0.0] * 63)
+            input_seq.append([0.0] * 68)
         input_seq = input_seq[:MAX_SEQ_LEN]
 
         input_np = np.array([input_seq])

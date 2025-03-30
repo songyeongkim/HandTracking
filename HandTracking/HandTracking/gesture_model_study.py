@@ -1,14 +1,45 @@
-# train_model.py
-import os, json, numpy as np
+# train_model_combined.py
+import os
+import json
+import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
-from tensorflow.keras.utils import to_categorical
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense, Masking
+from tensorflow.keras.layers import LSTM, Dense, Dropout
 
-DATA_DIR = 'C:/Users/redjack11/Desktop/BodyTracking/TrackingProject/HandTracking/EasyOCRTest/Assets/GestureData'  # Unity에서 저장한 위치
+# === CONFIG ===
+DATA_DIR = 'C:/Users/redjack11/Desktop/BodyTracking/TrackingProject/HandTracking/EasyOCRTest/Assets/GestureData'
+MODEL_OUTPUT = 'sign_gesture_model_v2.h5'
+MAX_SEQ_LEN = 151  # 고정 시퀀스 길이
+FEATURE_DIM = 68   # 63 좌표 + 5 손가락 상태
 
-X, y = [], []
+# === 손가락 펴짐 여부 계산 ===
+def is_finger_extended(lm, mcp, pip, tip):
+    v1 = np.array([lm[pip]["x"] - lm[mcp]["x"], lm[pip]["y"] - lm[mcp]["y"]])
+    v2 = np.array([lm[tip]["x"] - lm[pip]["x"], lm[tip]["y"] - lm[pip]["y"]])
+    dot = np.dot(v1, v2)
+    norm = np.linalg.norm(v1) * np.linalg.norm(v2)
+    angle = np.degrees(np.arccos(np.clip(dot / norm, -1.0, 1.0)))
+    return 1.0 if angle > 160 else 0.0
+
+# === 프레임 단위 feature 추출 ===
+def extract_features(frame):
+    lm = frame["landmarks"]
+    coords = []
+    for pt in lm:
+        coords.extend([pt["x"], pt["y"], pt["z"]])
+
+    fingers = [
+        is_finger_extended(lm, 2, 3, 4),   # Thumb
+        is_finger_extended(lm, 5, 6, 8),   # Index
+        is_finger_extended(lm, 9, 10, 12), # Middle
+        is_finger_extended(lm, 13, 14, 16),# Ring
+        is_finger_extended(lm, 17, 18, 20) # Pinky
+    ]
+    return coords + fingers  # 총 68차원
+
+# === 전체 데이터 로딩 ===
+X, y_raw = [], []
 
 for file in os.listdir(DATA_DIR):
     if file.endswith('.json'):
@@ -16,37 +47,31 @@ for file in os.listdir(DATA_DIR):
             data = json.load(f)
             label = data['label']
             sequence = data['sequence']
-            frames = []
-            for frame in sequence:
-                coords = []
-                for lm in frame['landmarks']:
-                    coords.extend([lm['x'], lm['y'], lm['z']])
-                frames.append(coords)
-            X.append(frames)
-            y.append(label)
-
-MAX_SEQ_LEN = max(len(seq) for seq in X)
-for i in range(len(X)):
-    pad = [[0]*63] * (MAX_SEQ_LEN - len(X[i]))
-    X[i] = X[i] + pad if len(X[i]) < MAX_SEQ_LEN else X[i][:MAX_SEQ_LEN]
+            features = [extract_features(f) for f in sequence]
+            features = features[:MAX_SEQ_LEN]
+            while len(features) < MAX_SEQ_LEN:
+                features.append([0.0] * FEATURE_DIM)
+            X.append(features)
+            y_raw.append(label)
 
 X = np.array(X)
 le = LabelEncoder()
-y_encoded = le.fit_transform(y)
-y_categorical = to_categorical(y_encoded)
+y = le.fit_transform(y_raw)
 
-X_train, X_val, y_train, y_val = train_test_split(X, y_categorical, test_size=0.2)
+# === 학습/검증 분리 ===
+X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
 
+# === 모델 정의 ===
 model = Sequential([
-    Masking(mask_value=0.0, input_shape=(MAX_SEQ_LEN, 63)),
-    LSTM(64, return_sequences=True),
+    LSTM(128, return_sequences=True, input_shape=(MAX_SEQ_LEN, FEATURE_DIM)),
+    Dropout(0.3),
     LSTM(64),
     Dense(64, activation='relu'),
-    Dense(y_categorical.shape[1], activation='softmax')
+    Dense(len(le.classes_), activation='softmax')
 ])
-model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
 
+# === 학습 ===
 model.fit(X_train, y_train, validation_data=(X_val, y_val), epochs=30, batch_size=16)
-
-model.save('sign_gesture_model.h5')
-print('✅ 모델 저장 완료: sign_gesture_model.h5')
+model.save(MODEL_OUTPUT)
+print(f'✅ 모델 저장 완료: {MODEL_OUTPUT}')
