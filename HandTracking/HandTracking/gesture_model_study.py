@@ -10,8 +10,9 @@ from tensorflow.keras.layers import LSTM, Dense, Dropout
 # === CONFIG ===
 DATA_DIR = 'C:/Users/redjack11/Desktop/BodyTracking/TrackingProject/HandTracking/EasyOCRTest/Assets/GestureData'
 MODEL_OUTPUT = 'sign_gesture_model_v2.h5'
+LABELS_OUTPUT = 'label_classes.npy'
 MAX_SEQ_LEN = 151  # 고정 시퀀스 길이
-FEATURE_DIM = 68   # 63 좌표 + 5 손가락 상태
+FEATURE_DIM = 68   # 63 상대좌표 + 5 손가락 상태
 
 # === 손가락 펴짐 여부 계산 ===
 def is_finger_extended(lm, mcp, pip, tip):
@@ -22,21 +23,26 @@ def is_finger_extended(lm, mcp, pip, tip):
     angle = np.degrees(np.arccos(np.clip(dot / norm, -1.0, 1.0)))
     return 1.0 if angle > 160 else 0.0
 
-# === 프레임 단위 feature 추출 ===
-def extract_features(frame):
+# === 상대좌표 기반 feature 추출 ===
+def extract_features_from_frame(frame):
     lm = frame["landmarks"]
-    coords = []
+    wrist = lm[0]
+    rel_coords = []
     for pt in lm:
-        coords.extend([pt["x"], pt["y"], pt["z"]])
+        rel_coords.extend([
+            pt["x"] - wrist["x"],
+            pt["y"] - wrist["y"],
+            pt["z"] - wrist["z"]
+        ])
 
     fingers = [
-        is_finger_extended(lm, 2, 3, 4),   # Thumb
-        is_finger_extended(lm, 5, 6, 8),   # Index
-        is_finger_extended(lm, 9, 10, 12), # Middle
-        is_finger_extended(lm, 13, 14, 16),# Ring
-        is_finger_extended(lm, 17, 18, 20) # Pinky
+        is_finger_extended(lm, 2, 3, 4),
+        is_finger_extended(lm, 5, 6, 8),
+        is_finger_extended(lm, 9, 10, 12),
+        is_finger_extended(lm, 13, 14, 16),
+        is_finger_extended(lm, 17, 18, 20)
     ]
-    return coords + fingers  # 총 68차원
+    return rel_coords + fingers  # 총 68차원
 
 # === 전체 데이터 로딩 ===
 X, y_raw = [], []
@@ -47,7 +53,7 @@ for file in os.listdir(DATA_DIR):
             data = json.load(f)
             label = data['label']
             sequence = data['sequence']
-            features = [extract_features(f) for f in sequence]
+            features = [extract_features_from_frame(f) for f in sequence]
             features = features[:MAX_SEQ_LEN]
             while len(features) < MAX_SEQ_LEN:
                 features.append([0.0] * FEATURE_DIM)
@@ -57,6 +63,9 @@ for file in os.listdir(DATA_DIR):
 X = np.array(X)
 le = LabelEncoder()
 y = le.fit_transform(y_raw)
+
+# 라벨 클래스 저장
+np.save(LABELS_OUTPUT, le.classes_)
 
 # === 학습/검증 분리 ===
 X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
@@ -75,3 +84,4 @@ model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=
 model.fit(X_train, y_train, validation_data=(X_val, y_val), epochs=30, batch_size=16)
 model.save(MODEL_OUTPUT)
 print(f'✅ 모델 저장 완료: {MODEL_OUTPUT}')
+print(f'✅ 라벨 저장 완료: {LABELS_OUTPUT}')
