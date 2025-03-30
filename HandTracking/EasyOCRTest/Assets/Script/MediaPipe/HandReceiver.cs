@@ -7,6 +7,7 @@ using UnityEngine;
 using TMPro;
 using System.Collections;
 using UnityEditor.PackageManager.Requests;
+using UnityEngine.Networking;
 
 public class HandReceiver : MonoBehaviour
 {
@@ -25,7 +26,7 @@ public class HandReceiver : MonoBehaviour
 
     private StringBuilder receivedData = new StringBuilder();
 
-    private readonly int[,] handConnections = new int[,]
+    public readonly int[,] handConnections = new int[,]
     {
         {0, 1}, {1, 2}, {2, 3}, {3, 4},
         {0, 5}, {5, 6}, {6, 7}, {7, 8},
@@ -34,15 +35,15 @@ public class HandReceiver : MonoBehaviour
         {0, 17}, {17, 18}, {18, 19}, {19, 20}
     };
 
-    private ObjectPool<Renderer> pointPool_Left;
-    private ObjectPool<Renderer> pointPool_Right;
-    private ObjectPool<LineRenderer> linePool_Left;
-    private ObjectPool<LineRenderer> linePool_Right;
+    public ObjectPool<Renderer> pointPool_Left;
+    public ObjectPool<Renderer> pointPool_Right;
+    public ObjectPool<LineRenderer> linePool_Left;
+    public ObjectPool<LineRenderer> linePool_Right;
 
-    private List<Renderer> activePoints_Left = new();
-    private List<Renderer> activePoints_Right = new();
-    private List<LineRenderer> activeLines_Left = new();
-    private List<LineRenderer> activeLines_Right = new();
+    public List<Renderer> activePoints_Left = new();
+    public List<Renderer> activePoints_Right = new();
+    public List<LineRenderer> activeLines_Left = new();
+    public List<LineRenderer> activeLines_Right = new();
 
     private List<List<Landmark>> recordedFrames = new();
     private bool isRecording = false;
@@ -68,6 +69,16 @@ public class HandReceiver : MonoBehaviour
 
     void Start()
     {
+        StartServerConnect();
+
+        pointPool_Left = new ObjectPool<Renderer>(pointPrefab_Left.GetComponent<Renderer>(), 50);
+        pointPool_Right = new ObjectPool<Renderer>(pointPrefab_Right.GetComponent<Renderer>(), 50);
+        linePool_Left = new ObjectPool<LineRenderer>(linePrefab.GetComponent<LineRenderer>(), 50);
+        linePool_Right = new ObjectPool<LineRenderer>(linePrefab.GetComponent<LineRenderer>(), 50);
+    }
+
+    public void StartServerConnect()
+    {
         try
         {
             client = new TcpClient("127.0.0.1", 5050);
@@ -80,11 +91,6 @@ public class HandReceiver : MonoBehaviour
             this.enabled = false;
             return;
         }
-
-        pointPool_Left = new ObjectPool<Renderer>(pointPrefab_Left.GetComponent<Renderer>(), 50);
-        pointPool_Right = new ObjectPool<Renderer>(pointPrefab_Right.GetComponent<Renderer>(), 50);
-        linePool_Left = new ObjectPool<LineRenderer>(linePrefab.GetComponent<LineRenderer>(), 50);
-        linePool_Right = new ObjectPool<LineRenderer>(linePrefab.GetComponent<LineRenderer>(), 50);
     }
 
     public void StartRecording()
@@ -133,6 +139,7 @@ public class HandReceiver : MonoBehaviour
         if (request.result == UnityEngine.Networking.UnityWebRequest.Result.Success)
         {
             string responseJson = request.downloadHandler.text;
+            Debug.Log("📩 받은 JSON 원문: " + responseJson);
             var response = JsonUtility.FromJson<PredictionResult>(responseJson);
             gestureText.text = $"🤖 {response.gesture}";
         }
@@ -152,6 +159,11 @@ public class HandReceiver : MonoBehaviour
         statusText.text = $"📹 Recording gesture: {label}";
 
         yield return new WaitForSeconds(5f); // 5초간 녹화
+
+        while (recordedFrames.Count < 150)
+        {
+            recordedFrames.Add(new List<Landmark>(new Landmark[21]));
+        }
 
         isRecording = false;
         string json = JsonUtility.ToJson(new RecordedGesture(label, recordedFrames));
@@ -255,7 +267,7 @@ public class HandReceiver : MonoBehaviour
         }
     }
 
-    void ReturnAll()
+    public void ReturnAll()
     {
         pointPool_Left?.ReturnAll(activePoints_Left);
         pointPool_Right?.ReturnAll(activePoints_Right);
@@ -333,6 +345,7 @@ public class HandReceiver : MonoBehaviour
     public class PredictionResult
     {
         public string gesture;
+        public float confidence;
     }
 
     bool IsThumbExtended(List<Landmark> lm)

@@ -58,30 +58,56 @@ def socket_server():
 app = Flask(__name__)
 model = tf.keras.models.load_model("sign_gesture_model.h5")
 labels = ["안녕하세요", "감사합니다", "사랑해요"]
-MAX_SEQ_LEN = 150
+MAX_SEQ_LEN = 151
+
+@app.before_request
+def log_request_info():
+    print(f"📡 [Flask] 요청 도착: {request.method} {request.path}")
 
 @app.route("/predict", methods=["POST"])
 def predict():
-    data = request.get_json()
-    frames = data.get("sequence", [])
+    if model is None:
+        return jsonify({"gesture": "모델 없음"}), 503
 
-    input_seq = []
-    for frame in frames:
-        flat = []
-        for lm in frame["landmarks"]:
-            flat.extend([lm["x"], lm["y"], lm["z"]])
-        input_seq.append(flat)
+    try:
+        data = request.get_json()
+        frames = data.get("sequence", [])
 
-    while len(input_seq) < MAX_SEQ_LEN:
-        input_seq.append([0.0] * 63)
-    input_seq = input_seq[:MAX_SEQ_LEN]
+        print("📥 수신된 제스처 프레임 수:", len(frames))
 
-    input_np = np.array([input_seq])
-    pred = model.predict(input_np)
-    label_index = np.argmax(pred[0])
-    result = labels[label_index]
+        if not frames:
+            print("❌ 프레임이 비어있음")
+            return "No frame data", 400
 
-    return jsonify({"gesture": result})
+        input_seq = []
+        for frame in frames:
+            flat = []
+            for lm in frame["landmarks"]:
+                flat.extend([lm["x"], lm["y"], lm["z"]])
+            input_seq.append(flat)
+
+        while len(input_seq) < MAX_SEQ_LEN:
+            input_seq.append([0.0] * 63)
+        input_seq = input_seq[:MAX_SEQ_LEN]
+
+        input_np = np.array([input_seq])
+        print("📊 모델 입력 shape:", input_np.shape)
+
+        pred = model.predict(input_np)
+        confidence = float(np.max(pred[0]))
+        label_index = int(np.argmax(pred[0]))
+        result = labels[label_index]
+
+        print(f"✅ 예측 결과: {result} ({confidence:.2f})")
+        response_data = {"gesture": result, "confidence": confidence}
+        print("📤 서버 응답 JSON:", json.dumps(response_data, ensure_ascii=False))
+        return jsonify(response_data)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print("❌ 예측 중 에러:", e)
+        return "Internal Server Error", 500
 
 # 📌 두 개의 서버를 병렬 실행
 if __name__ == '__main__':

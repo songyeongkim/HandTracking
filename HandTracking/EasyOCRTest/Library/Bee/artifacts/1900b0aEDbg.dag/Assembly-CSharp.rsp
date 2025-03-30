@@ -427,6 +427,7 @@
 "Assets/Script/DrawScript.cs"
 "Assets/Script/EasyOCRManager.cs"
 "Assets/Script/MediaPipe/HandReceiver.cs"
+"Assets/Script/MediaPipe/HandReplayer.cs"
 "Assets/Script/MediaPipe/PoseReceiver.cs"
 "Assets/TutorialInfo/Scripts/Readme.cs"
 -langversion:9.0
