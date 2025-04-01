@@ -33,7 +33,7 @@ public class HandPosPredictor : MonoBehaviour
         statusText.text = $"📹 Wait for Predicting";
         StartCoroutine(PredictGestureFromModel((gestureString) =>
         {
-            gestureString = gestureText.text;
+            Debug.Log(gestureString);
 
             if (GestureReturnAction != null)
                 GestureReturnAction.Invoke(gestureString);
@@ -78,6 +78,8 @@ public class HandPosPredictor : MonoBehaviour
             Debug.Log("📩 받은 JSON 원문: " + responseJson);
             var response = JsonUtility.FromJson<PredictionResult>(responseJson);
             gestureText.text = $"🤖 {response.gesture}";
+
+            callbackText.Invoke(response.gesture);
         }
         else
         {

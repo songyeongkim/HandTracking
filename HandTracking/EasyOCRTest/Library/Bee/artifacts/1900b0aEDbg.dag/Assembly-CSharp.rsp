@@ -427,6 +427,7 @@
 "Assets/Script/DrawScript.cs"
 "Assets/Script/EasyOCRManager.cs"
 "Assets/Script/MediaPipe/DropHangeul.cs"
+"Assets/Script/MediaPipe/DropObjInfo.cs"
 "Assets/Script/MediaPipe/HandHanguelPosReceiver.cs"
 "Assets/Script/MediaPipe/HandPosPredictor.cs"
 "Assets/Script/MediaPipe/HandPosRecorder.cs"

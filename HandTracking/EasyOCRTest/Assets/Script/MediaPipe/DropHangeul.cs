@@ -14,25 +14,38 @@ public class DropHangeul : MonoBehaviour
     [SerializeField]
     private HandPosPredictor _posPredictor;
 
-    void Start()
+    private DropObjInfo _nowDropObjInfo;
+
+    void Awake()
     {
         if(_posPredictor != null)
             _posPredictor.GestureReturnAction += SelectHangeulObj;
     }
 
-
-    void Update()
-    {
-        
-    }
-
     private void SelectHangeulObj(string objName)
     {
+        foreach (GameObject objInfo in _hangeulObjects)
+        {
+            DropObjInfo dropObjInfo;
+
+            if (objInfo.GetComponent<DropObjInfo>() != null)
+            {
+                dropObjInfo = objInfo.GetComponent<DropObjInfo>();
+
+                DropObjInfo prefabinfo = dropObjInfo.ReturnThisPrefab(objName);
+                if (prefabinfo != null)
+                {
+                    _nowDropObjInfo = prefabinfo;
+                    CreateHangeulObject(_nowDropObjInfo.gameObject);
+                    return;
+                }
+            } 
+        }
 
     }
 
 
-    public void CreateHangeulObject(GameObject hangeulObj)
+    private void CreateHangeulObject(GameObject hangeulObj)
     {
         if(_dropSpots != null && _hangeulObjects != null)
         {
