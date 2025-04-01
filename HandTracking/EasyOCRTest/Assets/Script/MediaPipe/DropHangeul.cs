@@ -11,9 +11,13 @@ public class DropHangeul : MonoBehaviour
     [SerializeField]
     private List<GameObject> _hangeulObjects;
 
+    [SerializeField]
+    private HandPosPredictor _posPredictor;
+
     void Start()
     {
-        
+        if(_posPredictor != null)
+            _posPredictor.GestureReturnAction += SelectHangeulObj;
     }
 
 
@@ -22,17 +26,20 @@ public class DropHangeul : MonoBehaviour
         
     }
 
+    private void SelectHangeulObj(string objName)
+    {
 
-    public void CreateRandomObject()
+    }
+
+
+    public void CreateHangeulObject(GameObject hangeulObj)
     {
         if(_dropSpots != null && _hangeulObjects != null)
         {
-            Debug.Log("create");
             int randomSpot = Random.Range(0, _dropSpots.Count);
-            int randomObj = Random.Range(0, _hangeulObjects.Count);
             float randomScale = Random.Range(0.5f, 1f);
-            GameObject hangeulObj = Instantiate(_hangeulObjects[randomObj], _dropSpots[randomSpot].transform.position, _dropSpots[randomSpot].transform.rotation);
-            hangeulObj.transform.localScale = new Vector3(randomScale, randomScale,1);
+            GameObject obj = Instantiate(hangeulObj, _dropSpots[randomSpot].transform.position, _dropSpots[randomSpot].transform.rotation);
+            obj.transform.localScale = new Vector3(randomScale, randomScale,1);
 
         }
     }

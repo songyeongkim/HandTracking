@@ -20,6 +20,8 @@ public class HandPosPredictor : MonoBehaviour
 
     private List<List<Landmark>> recordedFrames;
 
+    public Action<String> GestureReturnAction;
+
     private void Awake()
     {
         if (_handReceiver != null)
@@ -29,11 +31,19 @@ public class HandPosPredictor : MonoBehaviour
     public void StartPredicting()
     {
         statusText.text = $"📹 Wait for Predicting";
-        StartCoroutine(PredictGestureFromModel());
+        StartCoroutine(PredictGestureFromModel((gestureString) =>
+        {
+            gestureString = gestureText.text;
+
+            if (GestureReturnAction != null)
+                GestureReturnAction.Invoke(gestureString);
+
+        }));
     }
 
-    IEnumerator PredictGestureFromModel()
+    IEnumerator PredictGestureFromModel(Action<string> callbackText)
     {
+        gestureText.text = null;
         statusText.text = "⏳ Get ready...";
         yield return new WaitForSeconds(1f); // 1초 대기
 
