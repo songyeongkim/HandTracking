@@ -1310,6 +1310,7 @@ GameObject:
   - component: {fileID: 788641249}
   - component: {fileID: 788641251}
   - component: {fileID: 788641252}
+  - component: {fileID: 788641253}
   m_Layer: 0
   m_Name: HandReceiver
   m_TagString: Untagged
@@ -1329,15 +1330,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c40d2d626aba863418b914c77ae1a503, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  pointPrefab_Right: {fileID: 4041237114081169430, guid: 28c27b245a0378a489a71d254251383d, type: 3}
-  pointPrefab_Left: {fileID: 4041237114081169430, guid: 56774be4dfe282d46ad3144faf94e506, type: 3}
-  linePrefab: {fileID: 3084201365615800706, guid: 436d1d0f5b7398b48900da99efb09847, type: 3}
-  leftHandLineMaterial: {fileID: 2100000, guid: 61120ca3d3085834cba1b052a3fa1b3d, type: 2}
-  rightHandLineMaterial: {fileID: 2100000, guid: dc915fdf5bdb4f04d903c586e0dad220, type: 2}
-  activePoints_Left: []
-  activePoints_Right: []
-  activeLines_Left: []
-  activeLines_Right: []
   isRecordActivating: 0
   requiredHoldDuration: 0.2
   recordingWaitTime: 2
@@ -1386,6 +1378,28 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   statusText: {fileID: 1537518792}
   gestureText: {fileID: 702039132}
+  _handReceiver: {fileID: 788641249}
+--- !u!114 &788641253
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 788641248}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ad8a7572dce197b4191f2bd546af4825, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  pointPrefab_Right: {fileID: 4041237114081169430, guid: 28c27b245a0378a489a71d254251383d, type: 3}
+  pointPrefab_Left: {fileID: 4041237114081169430, guid: 56774be4dfe282d46ad3144faf94e506, type: 3}
+  linePrefab: {fileID: 3084201365615800706, guid: 436d1d0f5b7398b48900da99efb09847, type: 3}
+  leftHandLineMaterial: {fileID: 2100000, guid: 61120ca3d3085834cba1b052a3fa1b3d, type: 2}
+  rightHandLineMaterial: {fileID: 2100000, guid: dc915fdf5bdb4f04d903c586e0dad220, type: 2}
+  activePoints_Left: []
+  activePoints_Right: []
+  activeLines_Left: []
+  activeLines_Right: []
   _handReceiver: {fileID: 788641249}
 --- !u!1 &1182782488
 GameObject:
@@ -1553,6 +1567,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   receiver: {fileID: 788641249}
+  posBoneViewer: {fileID: 788641253}
   jsonFile: {fileID: 4900000, guid: 375af74502f5ebd4988b1d427ecb4149, type: 3}
   frameDelay: 0.03
 --- !u!4 &1257263279

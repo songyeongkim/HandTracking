@@ -7,6 +7,7 @@ using System.IO;
 public class HandReplayer : MonoBehaviour
 {
     public HandReceiver receiver; // 기존 HandReceiver를 연결해주세요
+    public PosBoneViewer posBoneViewer;
     public TextAsset jsonFile;    // Inspector에서 JSON 지정 가능
     public float frameDelay = 0.03f;
 
@@ -38,11 +39,13 @@ public class HandReplayer : MonoBehaviour
 
     IEnumerator ReplayGesture(List<FrameData> frames)
     {
-        receiver.ReturnAll();
+        if (receiver.returnAllAction != null)
+            receiver.returnAllAction.Invoke();
 
         for (int f = 0; f < frames.Count; f++)
         {
-            receiver.ReturnAll(); // 기존 오브젝트 초기화
+            if (receiver.returnAllAction != null)
+                receiver.returnAllAction.Invoke(); // 기존 오브젝트 초기화
 
             var landmarks = frames[f].landmarks;
             List<Transform> handPoints = new();
@@ -55,10 +58,10 @@ public class HandReplayer : MonoBehaviour
 
                 Vector3 pos = new Vector3(x * 5f - 2.5f, y * 5f - 2.5f, z * 5f);
 
-                if (receiver.activePoints_Right.Count <= i)
-                    receiver.activePoints_Right.Add(receiver.pointPool_Right.Get());
+                if (posBoneViewer.activePoints_Right.Count <= i)
+                    posBoneViewer.activePoints_Right.Add(posBoneViewer.pointPool_Right.Get());
 
-                var point = receiver.activePoints_Right[i];
+                var point = posBoneViewer.activePoints_Right[i];
                 point.transform.position = pos;
                 handPoints.Add(point.transform);
             }
@@ -70,11 +73,11 @@ public class HandReplayer : MonoBehaviour
 
                 if (start < handPoints.Count && end < handPoints.Count)
                 {
-                    if (receiver.activeLines_Right.Count <= i)
-                        receiver.activeLines_Right.Add(receiver.linePool_Right.Get());
+                    if (posBoneViewer.activeLines_Right.Count <= i)
+                        posBoneViewer.activeLines_Right.Add(posBoneViewer.linePool_Right.Get());
 
-                    var line = receiver.activeLines_Right[i];
-                    line.material = receiver.rightHandLineMaterial;
+                    var line = posBoneViewer.activeLines_Right[i];
+                    line.material = posBoneViewer.rightHandLineMaterial;
                     line.startWidth = 0.03f;
                     line.endWidth = 0.03f;
                     line.positionCount = 2;

@@ -13,12 +13,6 @@ public class HandReceiver : MonoBehaviour
 {
     TcpClient client;
     NetworkStream stream;
-    public GameObject pointPrefab_Right;
-    public GameObject pointPrefab_Left;
-    public GameObject linePrefab;
-
-    public Material leftHandLineMaterial;
-    public Material rightHandLineMaterial;
 
     private StringBuilder receivedData = new StringBuilder();
 
@@ -30,16 +24,6 @@ public class HandReceiver : MonoBehaviour
         {0, 13}, {13, 14}, {14, 15}, {15, 16},
         {0, 17}, {17, 18}, {18, 19}, {19, 20}
     };
-
-    public ObjectPool<Renderer> pointPool_Left;
-    public ObjectPool<Renderer> pointPool_Right;
-    public ObjectPool<LineRenderer> linePool_Left;
-    public ObjectPool<LineRenderer> linePool_Right;
-
-    public List<Renderer> activePoints_Left = new();
-    public List<Renderer> activePoints_Right = new();
-    public List<LineRenderer> activeLines_Left = new();
-    public List<LineRenderer> activeLines_Right = new();
 
     public List<List<Landmark>> recordedFrames = new();
     public bool isRecordActivating = false;
@@ -58,6 +42,9 @@ public class HandReceiver : MonoBehaviour
 
     private List<Gesture> gestures;
 
+    public Action returnAllAction;
+    public Action<int, HandsWrapper> handViewerAction;
+
     private void Awake()
     {
     }
@@ -65,11 +52,6 @@ public class HandReceiver : MonoBehaviour
     void Start()
     {
         StartServerConnect();
-
-        pointPool_Left = new ObjectPool<Renderer>(pointPrefab_Left.GetComponent<Renderer>(), 50);
-        pointPool_Right = new ObjectPool<Renderer>(pointPrefab_Right.GetComponent<Renderer>(), 50);
-        linePool_Left = new ObjectPool<LineRenderer>(linePrefab.GetComponent<LineRenderer>(), 50);
-        linePool_Right = new ObjectPool<LineRenderer>(linePrefab.GetComponent<LineRenderer>(), 50);
     }
 
     public void StartServerConnect()
@@ -111,7 +93,8 @@ public class HandReceiver : MonoBehaviour
                         if (handData == null || handData.hands == null)
                             return;
 
-                        ReturnAll();
+                        if (returnAllAction != null)
+                            returnAllAction.Invoke();
 
                         for (int h = 0; h < handData.hands.Count; h++)
                         {
@@ -126,50 +109,11 @@ public class HandReceiver : MonoBehaviour
                             if (isRecordActivating && h == 1)
                                 recordedFrames.Add(new List<Landmark>(landmarks));
 
-                            var pointPool = (h == 0) ? pointPool_Left : pointPool_Right;
-                            var linePool = (h == 0) ? linePool_Left : linePool_Right;
-                            var pointList = (h == 0) ? activePoints_Left : activePoints_Right;
-                            var lineList = (h == 0) ? activeLines_Left : activeLines_Right;
-                            var lineMat = (h == 0) ? leftHandLineMaterial : rightHandLineMaterial;
-
-                            List<Transform> currentHandPoints = new();
-
-                            for (int i = 0; i < landmarks.Count; i++)
+                            if (handViewerAction != null)
                             {
-                                float flippedY = 1 - landmarks[i].y;
-                                Vector3 pos = new Vector3(
-                                    landmarks[i].x * 5f - 2.5f,
-                                    flippedY * 5f - 2.5f,
-                                    -landmarks[i].z * 5f
-                                );
-
-                                if (pointList.Count <= i)
-                                    pointList.Add(pointPool.Get());
-
-                                var point = pointList[i];
-                                point.transform.position = pos;
-                                currentHandPoints.Add(point.transform);
+                                handViewerAction.Invoke(h, handData);
                             }
-
-                            for (int i = 0; i < handConnections.GetLength(0); i++)
-                            {
-                                int startIdx = handConnections[i, 0];
-                                int endIdx = handConnections[i, 1];
-
-                                if (startIdx < currentHandPoints.Count && endIdx < currentHandPoints.Count)
-                                {
-                                    if (lineList.Count <= i)
-                                        lineList.Add(linePool.Get());
-
-                                    var lr = lineList[i];
-                                    lr.material = lineMat;
-                                    lr.startWidth = 0.03f;
-                                    lr.endWidth = 0.03f;
-                                    lr.positionCount = 2;
-                                    lr.SetPosition(0, currentHandPoints[startIdx].position);
-                                    lr.SetPosition(1, currentHandPoints[endIdx].position);
-                                }
-                            }
+                                
                         }
                     }
                     catch (Exception e)
@@ -179,14 +123,6 @@ public class HandReceiver : MonoBehaviour
                 }
             }
         }
-    }
-
-    public void ReturnAll()
-    {
-        pointPool_Left?.ReturnAll(activePoints_Left);
-        pointPool_Right?.ReturnAll(activePoints_Right);
-        linePool_Left?.ReturnAll(activeLines_Left);
-        linePool_Right?.ReturnAll(activeLines_Right);
     }
 
     void OnApplicationQuit()
