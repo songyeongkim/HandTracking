@@ -20,10 +20,6 @@ public class HandReceiver : MonoBehaviour
     public Material leftHandLineMaterial;
     public Material rightHandLineMaterial;
 
-    public TMP_InputField gestureInput;
-    public TextMeshProUGUI statusText;
-    public TextMeshProUGUI gestureText;
-
     private StringBuilder receivedData = new StringBuilder();
 
     public readonly int[,] handConnections = new int[,]
@@ -45,9 +41,8 @@ public class HandReceiver : MonoBehaviour
     public List<LineRenderer> activeLines_Left = new();
     public List<LineRenderer> activeLines_Right = new();
 
-    private List<List<Landmark>> recordedFrames = new();
-    private bool isRecording = false;
-    private bool isPredicting = false;
+    public List<List<Landmark>> recordedFrames = new();
+    public bool isRecordActivating = false;
 
     private string currentGesture = "";
     private string lastDetectedGesture = "";
@@ -93,87 +88,6 @@ public class HandReceiver : MonoBehaviour
         }
     }
 
-    public void StartRecording()
-    {
-        string label = gestureInput.text.Trim();
-        if (!string.IsNullOrEmpty(label))
-        {
-            StartCoroutine(RecordGesture(label));
-        }
-    }
-
-    public void StartPredicting()
-    {
-        statusText.text = $"📹 Wait for Predicting";
-        StartCoroutine(PredictGestureFromModel());
-    }
-
-    IEnumerator PredictGestureFromModel()
-    {
-        statusText.text = "⏳ Get ready...";
-        yield return new WaitForSeconds(1f); // 1초 대기
-
-        isPredicting = true;
-        recordedFrames.Clear();
-        statusText.text = "Predicting gesture";
-
-        yield return new WaitForSeconds(5f); // 5초 녹화
-
-
-        while (recordedFrames.Count < 150)
-        {
-            recordedFrames.Add(new List<Landmark>(new Landmark[21]));
-        }
-
-        var wrapper = new RecordedGesture("predict", recordedFrames);
-        string json = JsonUtility.ToJson(wrapper);
-
-        using var request = new UnityEngine.Networking.UnityWebRequest("http://127.0.0.1:8000/predict", "POST");
-        byte[] bodyRaw = Encoding.UTF8.GetBytes(json);
-        request.uploadHandler = new UnityEngine.Networking.UploadHandlerRaw(bodyRaw);
-        request.downloadHandler = new UnityEngine.Networking.DownloadHandlerBuffer();
-        request.SetRequestHeader("Content-Type", "application/json");
-
-        yield return request.SendWebRequest();
-
-        if (request.result == UnityEngine.Networking.UnityWebRequest.Result.Success)
-        {
-            string responseJson = request.downloadHandler.text;
-            Debug.Log("📩 받은 JSON 원문: " + responseJson);
-            var response = JsonUtility.FromJson<PredictionResult>(responseJson);
-            gestureText.text = $"🤖 {response.gesture}";
-        }
-        else
-        {
-            Debug.LogError("🔥 Predict request failed: " + request.error);
-        }
-    }
-
-    IEnumerator RecordGesture(string label)
-    {
-        statusText.text = "⏳ Get ready...";
-        yield return new WaitForSeconds(1f); // 1초 대기
-
-        isRecording = true;
-        recordedFrames.Clear();
-        statusText.text = $"📹 Recording gesture: {label}";
-
-        yield return new WaitForSeconds(5f); // 5초간 녹화
-
-        while (recordedFrames.Count < 150)
-        {
-            recordedFrames.Add(new List<Landmark>(new Landmark[21]));
-        }
-
-        isRecording = false;
-        string json = JsonUtility.ToJson(new RecordedGesture(label, recordedFrames));
-        string folder = Path.Combine(Application.dataPath, "GestureData");
-        Directory.CreateDirectory(folder);
-        string path = Path.Combine(folder, $"{label}_{DateTime.Now:yyyyMMdd_HHmmss}.json");
-        File.WriteAllText(path, json);
-        statusText.text = $"💾 Saved to: {path}";
-    }
-
     void Update()
     {
         if (stream != null && stream.DataAvailable)
@@ -209,7 +123,7 @@ public class HandReceiver : MonoBehaviour
                             for (int i = 0; i < landmarks.Count; i++)
                                 landmarks[i].x = 1.0f - landmarks[i].x;
 
-                            if (isRecording && h == 1 || isPredicting && h == 1)
+                            if (isRecordActivating && h == 1)
                                 recordedFrames.Add(new List<Landmark>(landmarks));
 
                             var pointPool = (h == 0) ? pointPool_Left : pointPool_Right;
@@ -280,87 +194,71 @@ public class HandReceiver : MonoBehaviour
         stream?.Close();
         client?.Close();
     }
+}
 
-    [Serializable]
-    public class Landmark
+[Serializable]
+public class Landmark
+{
+    public float x;
+    public float y;
+    public float z;
+}
+
+[Serializable]
+public class HandLandmarks
+{
+    public List<Landmark> landmarks;
+}
+
+[Serializable]
+public class HandsWrapper
+{
+    public List<HandLandmarks> hands;
+}
+
+public class Gesture
+{
+    public string name;
+    public Func<List<Landmark>, bool> matchFunc;
+
+    public Gesture(string name, Func<List<Landmark>, bool> matchFunc)
     {
-        public float x;
-        public float y;
-        public float z;
+        this.name = name;
+        this.matchFunc = matchFunc;
     }
+}
 
-    [Serializable]
-    public class HandLandmarks
+[Serializable]
+public class RecordedGesture
+{
+    public string label;
+    public List<FrameData> sequence;
+
+    public RecordedGesture(string label, List<List<Landmark>> frames)
     {
-        public List<Landmark> landmarks;
-    }
-
-    [Serializable]
-    public class HandsWrapper
-    {
-        public List<HandLandmarks> hands;
-    }
-
-    public class Gesture
-    {
-        public string name;
-        public Func<List<Landmark>, bool> matchFunc;
-
-        public Gesture(string name, Func<List<Landmark>, bool> matchFunc)
+        this.label = label;
+        this.sequence = new List<FrameData>();
+        foreach (var frame in frames)
         {
-            this.name = name;
-            this.matchFunc = matchFunc;
+            sequence.Add(new FrameData(frame));
         }
     }
+}
 
-    [Serializable]
-    public class RecordedGesture
+[Serializable]
+public class FrameData
+{
+    public List<Landmark> landmarks;
+
+    public FrameData(List<Landmark> lm)
     {
-        public string label;
-        public List<FrameData> sequence;
-
-        public RecordedGesture(string label, List<List<Landmark>> frames)
-        {
-            this.label = label;
-            this.sequence = new List<FrameData>();
-            foreach (var frame in frames)
-            {
-                sequence.Add(new FrameData(frame));
-            }
-        }
+        landmarks = lm;
     }
+}
 
-    [Serializable]
-    public class FrameData
-    {
-        public List<Landmark> landmarks;
-
-        public FrameData(List<Landmark> lm)
-        {
-            landmarks = lm;
-        }
-    }
-
-    [Serializable]
-    public class PredictionResult
-    {
-        public string gesture;
-        public float confidence;
-    }
-
-    bool IsThumbExtended(List<Landmark> lm)
-    {
-        Vector3 v1 = new Vector3(lm[1].x - lm[0].x, lm[1].y - lm[0].y, lm[1].z - lm[0].z);
-        Vector3 v2 = new Vector3(lm[4].x - lm[2].x, lm[4].y - lm[2].y, lm[4].z - lm[2].z);
-        float angle = Vector3.Angle(v1, v2);
-        return angle < 45f || angle > 135f;
-    }
-
-    bool IsFingerExtended(List<Landmark> lm, int mcp, int pip, int tip)
-    {
-        Vector3 v1 = new Vector3(lm[pip].x - lm[mcp].x, lm[pip].y - lm[mcp].y, lm[pip].z - lm[mcp].z);
-        Vector3 v2 = new Vector3(lm[tip].x - lm[pip].x, lm[tip].y - lm[pip].y, lm[tip].z - lm[pip].z);
-        float angle = Vector3.Angle(v1, v2);
-        return angle > 130f;
-    }
+[Serializable]
+public class PredictionResult
+{
+    public string gesture;
+    public float confidence;
 }

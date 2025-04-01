@@ -13,7 +13,7 @@ public class HandReplayer : MonoBehaviour
     [System.Serializable]
     public class FrameData
     {
-        public List<HandReceiver.Landmark> landmarks;
+        public List<Landmark> landmarks;
     }
 
     [System.Serializable]
