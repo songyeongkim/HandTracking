@@ -51,10 +51,10 @@ public class HandPosPredictor : MonoBehaviour
         recordedFrames.Clear();
         statusText.text = "Predicting gesture";
 
-        yield return new WaitForSeconds(5f); // 5초 녹화
+        yield return new WaitForSeconds(3f); // 5초 녹화
 
 
-        while (recordedFrames.Count < 150)
+        while (recordedFrames.Count < 90)
         {
             recordedFrames.Add(new List<Landmark>(new Landmark[21]));
         }

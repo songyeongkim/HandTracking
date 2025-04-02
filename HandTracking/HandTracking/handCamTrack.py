@@ -58,7 +58,7 @@ def socket_server():
 app = Flask(__name__)
 model = tf.keras.models.load_model("sign_gesture_model_v2.h5")
 label_classes = np.load("label_classes.npy", allow_pickle=True)
-MAX_SEQ_LEN = 151
+MAX_SEQ_LEN = 91
 
 # === 손가락 펴짐 여부 판단 ===
 def is_finger_extended(lm, mcp, pip, tip):

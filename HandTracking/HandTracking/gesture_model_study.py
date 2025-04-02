@@ -11,7 +11,7 @@ from tensorflow.keras.layers import LSTM, Dense, Dropout
 DATA_DIR = 'C:/Users/redjack11/Desktop/BodyTracking/TrackingProject/HandTracking/EasyOCRTest/Assets/GestureData'
 MODEL_OUTPUT = 'sign_gesture_model_v2.h5'
 LABELS_OUTPUT = 'label_classes.npy'
-MAX_SEQ_LEN = 151  # 고정 시퀀스 길이
+MAX_SEQ_LEN = 91  # 고정 시퀀스 길이
 FEATURE_DIM = 68   # 63 상대좌표 + 5 손가락 상태
 
 # === 손가락 펴짐 여부 계산 ===
